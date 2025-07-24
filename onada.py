@@ -85,7 +85,7 @@ def run_crt_bot():
         second = now.second
         print(f"🕒 {minute}:{second}")
 
-        if minute == 30 and 0 <= second <= 2:
+        if minute == 45 and 0 <= second <= 2:
             if now.hour % 1 == 0:
                 print("🔍 Fetching H1 candles...")
                 fetch_candles("H1")
