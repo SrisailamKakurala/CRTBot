@@ -1,14 +1,19 @@
+import os
+import time
+import threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from flask import Flask, jsonify
+from dotenv import load_dotenv
+
 import oandapyV20
 from oandapyV20.endpoints.instruments import InstrumentsCandles
-from datetime import datetime, timedelta, timezone
 from twilio.rest import Client
-import time
-from zoneinfo import ZoneInfo
-from dotenv import load_dotenv
-import os
 
+# Load environment variables
 load_dotenv()
 
+# API Tokens and setup
 ACCESS_TOKEN = os.getenv('OANDA_ACCESS_TOKEN')
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
@@ -16,10 +21,13 @@ TWILIO_WHATSAPP_NUMBER = os.getenv('TWILIO_WHATSAPP_NUMBER')
 TO_WHATSAPP_NUMBER = os.getenv('TO_WHATSAPP_NUMBER')
 
 client = oandapyV20.API(access_token=ACCESS_TOKEN)
-
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# --- Send WhatsApp message ---
+# Flask app
+app = Flask(__name__)
+bot_running = False  # Flag to show bot status
+
+# --- WhatsApp Messaging ---
 def send_whatsapp_message(body):
     try:
         twilio_client.messages.create(
@@ -31,15 +39,10 @@ def send_whatsapp_message(body):
     except Exception as e:
         print(f"❌ Failed to send WhatsApp message: {e}")
 
-# --- CRT Signal Logic ---
+# --- CRT Logic ---
 def check_crt(c1, c2):
-    l1 = float(c1['l'])  # Low of second last candle
-    h1 = float(c1['h'])  # High of second last candle
-    close1 = float(c1['c'])  # Close of second last candle
-
-    l2 = float(c2['l'])  # Low of last candle
-    h2 = float(c2['h'])  # High of last candle
-    close2 = float(c2['c'])  # Close of last candle
+    l1, h1, close1 = float(c1['l']), float(c1['h']), float(c1['c'])
+    l2, h2, close2 = float(c2['l']), float(c2['h']), float(c2['c'])
 
     if l1 > l2 and close2 > l1:
         return "🟢 Bullish CRT"
@@ -47,7 +50,6 @@ def check_crt(c1, c2):
         return "🔴 Bearish CRT"
     return None
 
-# --- Fetch 3 candles and evaluate signal ---
 def fetch_candles(granularity):
     params = {
         "granularity": granularity,
@@ -62,35 +64,52 @@ def fetch_candles(granularity):
         print("⚠️ Not enough candle data.")
         return
 
-    c1 = candles[-3]['mid']  # second last closed
-    c2 = candles[-2]['mid']  # last closed
+    c1 = candles[-3]['mid']
+    c2 = candles[-2]['mid']
     print(c1, c2)
     result = check_crt(c1, c2)
     print(result)
     if result:
         msg = f"[{granularity}] {result}"
-        print(msg)
         send_whatsapp_message(msg)
 
-# --- Main loop ---
+# --- Background CRT Bot ---
 def run_crt_bot():
+    global bot_running
+    bot_running = True
+    print("🚀 CRT Bot started... Waiting for H1/H4 candle closes...")
+
     while True:
         now = datetime.now(ZoneInfo("Asia/Kolkata"))
         minute = now.minute
         second = now.second
-        print(minute, second)
-        # Only check at xx:30
+        print(f"🕒 {minute}:{second}")
+
         if minute == 30 and 0 <= second <= 2:
             if now.hour % 1 == 0:
-                print("🚀 Fetching H1 candles...")
+                print("🔍 Fetching H1 candles...")
                 fetch_candles("H1")
             if now.hour % 4 == 0:
+                print("🔍 Fetching H4 candles...")
                 fetch_candles("H4")
 
         time.sleep(1)
 
-if __name__ == "__main__":
-    print("🚀 CRT Bot started... Waiting for H1/H4 candle closes...")
+# --- Flask Endpoints ---
+@app.route("/")
+def home():
+    return jsonify({
+        "status": "Bot is running" if bot_running else "Bot is not running"
+    })
 
-    # Start bot loop
-    run_crt_bot()
+@app.route("/ping")
+def ping():
+    return "pong"
+
+# --- Start everything ---
+if __name__ == "__main__":
+    # Start CRT bot in background
+    threading.Thread(target=run_crt_bot, daemon=True).start()
+
+    # Run Flask server
+    app.run(debug=True, port=8000)
