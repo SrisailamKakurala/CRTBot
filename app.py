@@ -78,15 +78,36 @@ def run_crt_bot():
         now = datetime.now(ZoneInfo("Asia/Kolkata"))
         minute = now.minute
         second = now.second
-        print(minute, second)
-        # Only check at xx:30
-        if minute == 30 and 0 <= second <= 2:
+        day_of_week = now.weekday()  # 0=Monday, 6=Sunday
+        hour = now.hour
+        
+        print(f"Day: {day_of_week}, Hour: {hour}, Minute: {minute}, Second: {second}")
+        
+        # Check if we're in the allowed time window
+        in_time_window = False
+        
+        if day_of_week == 0:  # Monday
+            if hour >= 3 or hour == 0:  # 3:30 AM onwards (including past midnight)
+                in_time_window = True
+        elif 1 <= day_of_week <= 3:  # Tuesday to Thursday
+            in_time_window = True  # All day
+        elif day_of_week == 4:  # Friday
+            if hour <= 0 and minute <= 10:  # Until 12:10 AM
+                in_time_window = True
+            elif hour >= 3:  # From 3:30 AM onwards
+                in_time_window = True
+        
+        # Only check at xx:30 and within time window
+        if in_time_window and minute == 30 and 0 <= second <= 5:
             if now.hour % 1 == 0:
                 print("🚀 Fetching H1 candles...")
                 fetch_candles("H1")
             if now.hour % 4 == 0:
+                print("🚀 Fetching H4 candles...")
                 fetch_candles("H4")
-
+        elif not in_time_window:
+            print("⏸️ Outside trading hours - waiting...")
+        
         time.sleep(1)
 
 if __name__ == "__main__":
