@@ -15,7 +15,14 @@ TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
 TWILIO_WHATSAPP_NUMBER = os.getenv('TWILIO_WHATSAPP_NUMBER')
 TO_WHATSAPP_NUMBER = os.getenv('TO_WHATSAPP_NUMBER')
 
-client = oandapyV20.API(access_token=ACCESS_TOKEN)
+print("Access Token:", ACCESS_TOKEN)
+print("Twilio Account SID:", TWILIO_ACCOUNT_SID)
+print("Twilio Auth Token:", TWILIO_AUTH_TOKEN)
+print("Twilio WhatsApp Number:", TWILIO_WHATSAPP_NUMBER)
+print("To WhatsApp Number:", TO_WHATSAPP_NUMBER)
+
+
+client = oandapyV20.API(access_token=ACCESS_TOKEN, environment="practice")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
