@@ -140,11 +140,11 @@ def fetch_candles(granularity):
         print("⚠️ Not enough candle data.")
         return
 
-    c1 = candles[-3]['mid']  # second last closed
-    c2 = candles[-2]['mid']  # last closed
+    c1 = candles[-2]['mid']  # last closed (previous candle)
+    c2 = candles[-3]['mid']  # second last closed (current candle)
     
     if TEST_MODE:
-        print(f"🧪 [TEST] Candle data - C1: {c1}, C2: {c2}")
+        print(f"🧪 [TEST] Candle data - C1 (prev): {c1}, C2 (curr): {c2}")
     
     print(c1, c2)
     result = check_crt(c1, c2)
