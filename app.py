@@ -119,9 +119,9 @@ def check_crt(c1, c2):
     h2 = float(c2['h'])  # High of last candle
     close2 = float(c2['c'])  # Close of last candle
 
-    if l1 > l2 and close2 > l1:
+    if l1 > l2 and close2 > l1 and h1 > h2:
         return "🟢 Bullish CRT"
-    elif h1 < h2 and close2 < h1:
+    elif h1 < h2 and close2 < h1 and l1 < l2:
         return "🔴 Bearish CRT"
     return None
 
@@ -139,12 +139,14 @@ def fetch_candles(granularity):
     if len(candles) < 3:
         print("⚠️ Not enough candle data.")
         return
+    
+    print(candles)
 
-    c1 = candles[-2]['mid']  # last closed (previous candle)
-    c2 = candles[-3]['mid']  # second last closed (current candle)
+    c1 = candles[0]['mid']  # first/range candle (setup candle)
+    c2 = candles[1]['mid']  # mid/sweeped candle (sweep candle) recently closed
     
     if TEST_MODE:
-        print(f"🧪 [TEST] Candle data - C1 (prev): {c1}, C2 (curr): {c2}")
+        print(f"🧪 [TEST] C1 (setup): {c1}, C2 (sweep): {c2}")
     
     print(c1, c2)
     result = check_crt(c1, c2)
