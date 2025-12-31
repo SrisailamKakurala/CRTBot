@@ -125,7 +125,10 @@ async def send_telegram_message(message):
     success_count = 0
     fail_count = 0
     
-    for user_id in authorized_users:
+    # Convert set to list to avoid "Set changed size during iteration" error
+    users_list = list(authorized_users)
+    
+    for user_id in users_list:
         try:
             await telegram_app.bot.send_message(
                 chat_id=user_id,
@@ -379,6 +382,8 @@ async def run_telegram_test():
     await asyncio.sleep(2)
     await test_telegram_messages()
     
+    # Stop polling BEFORE shutdown
+    await telegram_app.updater.stop()
     await telegram_app.stop()
     await telegram_app.shutdown()
 
