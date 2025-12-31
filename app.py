@@ -8,8 +8,7 @@ from dotenv import load_dotenv
 import os
 import sys
 import json
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Bot
 from telegram.request import HTTPXRequest
 import asyncio
 
@@ -42,8 +41,8 @@ if TEST_TELEGRAM:
 client = oandapyV20.API(access_token=ACCESS_TOKEN, environment="practice")
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# Global Telegram app
-telegram_app = None
+# Simple Telegram bot - just for sending messages
+telegram_bot = None
 
 # --- Load/Save Authorized Users ---
 USERS_FILE = "users.json"
@@ -65,62 +64,10 @@ def save_users(users):
 
 authorized_users = load_users()
 
-# --- Telegram Bot Handlers ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    username = update.effective_user.username or "Unknown"
-    
-    if user_id not in authorized_users:
-        authorized_users.add(user_id)
-        save_users(authorized_users)
-        await update.message.reply_text(
-            f"✅ Welcome {username}!\n"
-            f"🎉 You're now subscribed to CRT signals!\n"
-            f"📊 You'll receive H1 and H4 CRT notifications.\n\n"
-            f"Your User ID: `{user_id}`",
-            parse_mode='Markdown'
-        )
-        print(f"✅ New user subscribed: {username} (ID: {user_id})")
-    else:
-        await update.message.reply_text(
-            f"👋 Welcome back {username}!\n"
-            f"✅ You're already subscribed to CRT signals.\n\n"
-            f"Your User ID: `{user_id}`",
-            parse_mode='Markdown'
-        )
-
-async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    username = update.effective_user.username or "Unknown"
-    
-    if user_id in authorized_users:
-        authorized_users.remove(user_id)
-        save_users(authorized_users)
-        await update.message.reply_text(
-            f"👋 Goodbye {username}!\n"
-            f"❌ You've been unsubscribed from CRT signals."
-        )
-        print(f"❌ User unsubscribed: {username} (ID: {user_id})")
-    else:
-        await update.message.reply_text("⚠️ You're not subscribed.")
-
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    is_subscribed = user_id in authorized_users
-    total_users = len(authorized_users)
-    
-    status_msg = (
-        f"📊 **CRT Bot Status**\n\n"
-        f"Your Status: {'✅ Subscribed' if is_subscribed else '❌ Not Subscribed'}\n"
-        f"Total Subscribers: {total_users}\n"
-        f"Your User ID: `{user_id}`"
-    )
-    await update.message.reply_text(status_msg, parse_mode='Markdown')
-
 # --- Send Telegram message to all authorized users ---
 async def send_telegram_message(message):
-    if not telegram_app or not authorized_users:
-        print("⚠️ No Telegram app or no subscribers")
+    if not telegram_bot or not authorized_users:
+        print("⚠️ No Telegram bot or no subscribers")
         return
     
     success_count = 0
@@ -130,7 +77,7 @@ async def send_telegram_message(message):
     
     for user_id in users_list:
         try:
-            await telegram_app.bot.send_message(
+            await telegram_bot.send_message(
                 chat_id=user_id,
                 text=message,
                 parse_mode='Markdown'
@@ -282,15 +229,14 @@ async def fetch_candles(granularity):
         print(msg)
         await send_notification(msg)
 
-# --- Main bot with CRT detection ---
+# --- Main loop ---
 async def run_bot():
-    global telegram_app
+    global telegram_bot
     
-    # Initialize Telegram bot with commands (works in both test and production)
+    # Initialize simple Telegram bot (no polling, just for sending)
     if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE":
         try:
-            print("🤖 Starting Telegram bot with commands...")
-            
+            print("🤖 Initializing Telegram bot...")
             request = HTTPXRequest(
                 connection_pool_size=8,
                 connect_timeout=30.0,
@@ -298,25 +244,16 @@ async def run_bot():
                 write_timeout=30.0,
                 pool_timeout=30.0
             )
+            telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN, request=request)
             
-            telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
-            
-            # Add command handlers
-            telegram_app.add_handler(CommandHandler("start", start))
-            telegram_app.add_handler(CommandHandler("stop", stop))
-            telegram_app.add_handler(CommandHandler("status", status))
-            
-            await telegram_app.initialize()
-            await telegram_app.start()
-            await telegram_app.updater.start_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
-            
+            # Test sending a startup message
+            test_msg = "🚀 CRT Bot Started!\n📊 Monitoring H1 and H4 candles..."
+            await send_telegram_message(test_msg)
             print(f"✅ Telegram bot ready! Subscribers: {len(authorized_users)}")
-            print("📱 Commands available: /start /stop /status")
-            
         except Exception as e:
-            print(f"⚠️ Telegram bot failed to start: {e}")
+            print(f"⚠️ Telegram initialization failed: {e}")
             print("📱 Bot will continue with WhatsApp only")
-            telegram_app = None
+            telegram_bot = None
     else:
         print("⚠️ TELEGRAM_BOT_TOKEN not configured")
     
@@ -370,9 +307,36 @@ async def run_bot():
         
         await asyncio.sleep(1)
 
-# --- Test mode for Telegram ---
+# --- Test mode for Telegram (for local testing with commands) ---
 async def run_telegram_test():
-    global telegram_app
+    global telegram_bot
+    
+    from telegram.ext import Application, CommandHandler
+    from telegram import Update
+    from telegram.ext import ContextTypes
+    
+    async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        username = update.effective_user.username or "Unknown"
+        
+        if user_id not in authorized_users:
+            authorized_users.add(user_id)
+            save_users(authorized_users)
+            await update.message.reply_text(
+                f"✅ Welcome {username}!\n"
+                f"🎉 You're now subscribed to CRT signals!\n"
+                f"📊 You'll receive H1 and H4 CRT notifications.\n\n"
+                f"Your User ID: `{user_id}`",
+                parse_mode='Markdown'
+            )
+            print(f"✅ New user subscribed: {username} (ID: {user_id})")
+        else:
+            await update.message.reply_text(
+                f"👋 Welcome back {username}!\n"
+                f"✅ You're already subscribed to CRT signals.\n\n"
+                f"Your User ID: `{user_id}`",
+                parse_mode='Markdown'
+            )
     
     print("🤖 Starting Telegram bot for testing...")
     
@@ -385,10 +349,9 @@ async def run_telegram_test():
     )
     
     telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
-    
     telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(CommandHandler("stop", stop))
-    telegram_app.add_handler(CommandHandler("status", status))
+    
+    telegram_bot = telegram_app.bot
     
     await telegram_app.initialize()
     await telegram_app.start()
@@ -422,5 +385,10 @@ if __name__ == "__main__":
         print("4. Test WhatsApp: python app.py --testw")
         print("5. Test Telegram: python app.py --testt")
         print("="*50 + "\n")
+        
+    async def startup_message():
+        test_msg = "🚀 CRT Bot Started!\n📊 Monitoring H1 and H4 candles..."
+        await send_telegram_message(test_msg)
+    
     
     asyncio.run(run_bot())
