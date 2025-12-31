@@ -290,38 +290,29 @@ async def run_bot():
     if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE":
         print("🤖 Starting Telegram bot...")
         
-        # Create request with longer timeouts
-        request = HTTPXRequest(
-            connection_pool_size=8,
-            connect_timeout=30.0,
-            read_timeout=30.0,
-            write_timeout=30.0,
-            pool_timeout=30.0
-        )
-        
-        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
-        
-        telegram_app.add_handler(CommandHandler("start", start))
-        telegram_app.add_handler(CommandHandler("stop", stop))
-        telegram_app.add_handler(CommandHandler("status", status))
-        
-        # Retry initialization
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                print(f"Attempting to initialize Telegram bot (attempt {attempt + 1}/{max_retries})...")
-                await telegram_app.initialize()
-                await telegram_app.start()
-                await telegram_app.updater.start_polling(drop_pending_updates=True)
-                print(f"✅ Telegram bot ready! Current subscribers: {len(authorized_users)}")
-                break
-            except Exception as e:
-                print(f"❌ Failed to initialize Telegram bot (attempt {attempt + 1}): {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(5)
-                else:
-                    print("⚠️ Continuing without Telegram bot...")
-                    telegram_app = None
+        try:
+            request = HTTPXRequest(
+                connection_pool_size=8,
+                connect_timeout=10.0,
+                read_timeout=10.0,
+                write_timeout=10.0,
+                pool_timeout=10.0
+            )
+            
+            telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
+            
+            telegram_app.add_handler(CommandHandler("start", start))
+            telegram_app.add_handler(CommandHandler("stop", stop))
+            telegram_app.add_handler(CommandHandler("status", status))
+            
+            await telegram_app.initialize()
+            await telegram_app.start()
+            await telegram_app.updater.start_polling(drop_pending_updates=True)
+            print(f"✅ Telegram bot ready! Current subscribers: {len(authorized_users)}")
+        except Exception as e:
+            print(f"⚠️ Telegram bot initialization failed: {e}")
+            print("📱 Bot will continue with WhatsApp only")
+            telegram_app = None
     else:
         print("⚠️ TELEGRAM_BOT_TOKEN not configured")
     
