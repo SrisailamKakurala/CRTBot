@@ -385,5 +385,10 @@ if __name__ == "__main__":
         print("4. Test WhatsApp: python app.py --testw")
         print("5. Test Telegram: python app.py --testt")
         print("="*50 + "\n")
+        
+    async def startup_message():
+        test_msg = "🚀 CRT Bot Started!\n📊 Monitoring H1 and H4 candles..."
+        await send_telegram_message(test_msg)
+    
     
     asyncio.run(run_bot())
