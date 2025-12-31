@@ -10,6 +10,7 @@ import sys
 import json
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.request import HTTPXRequest
 import asyncio
 
 load_dotenv()
@@ -125,7 +126,6 @@ async def send_telegram_message(message):
     success_count = 0
     fail_count = 0
     
-    # Convert set to list to avoid "Set changed size during iteration" error
     users_list = list(authorized_users)
     
     for user_id in users_list:
@@ -162,13 +162,11 @@ def send_whatsapp_message(body):
 
 # --- Unified message sender (Telegram first, then WhatsApp) ---
 async def send_notification(message):
-    # Send to Telegram FIRST (priority)
     try:
         await send_telegram_message(message)
     except Exception as e:
         print(f"⚠️ Telegram failed: {e}")
     
-    # Send to WhatsApp SECOND (might fail after credits expire)
     try:
         send_whatsapp_message(message)
     except Exception as e:
@@ -212,14 +210,8 @@ def test_whatsapp_messages():
     print("="*60 + "\n")
     
     mock_signals = [
-        {
-            "granularity": "H1",
-            "signal": "🟢 Bullish CRT",
-        },
-        {
-            "granularity": "H1",
-            "signal": "🔴 Bearish CRT",
-        }
+        {"granularity": "H1", "signal": "🟢 Bullish CRT"},
+        {"granularity": "H1", "signal": "🔴 Bearish CRT"}
     ]
     
     for i, mock in enumerate(mock_signals, 1):
@@ -294,21 +286,42 @@ async def fetch_candles(granularity):
 async def run_bot():
     global telegram_app
     
-    # Initialize Telegram bot
+    # Initialize Telegram bot with retry logic
     if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE":
         print("🤖 Starting Telegram bot...")
-        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        
+        # Create request with longer timeouts
+        request = HTTPXRequest(
+            connection_pool_size=8,
+            connect_timeout=30.0,
+            read_timeout=30.0,
+            write_timeout=30.0,
+            pool_timeout=30.0
+        )
+        
+        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
         
         telegram_app.add_handler(CommandHandler("start", start))
         telegram_app.add_handler(CommandHandler("stop", stop))
         telegram_app.add_handler(CommandHandler("status", status))
         
-        print(f"✅ Telegram bot ready! Current subscribers: {len(authorized_users)}")
-        
-        # Start bot polling in background
-        await telegram_app.initialize()
-        await telegram_app.start()
-        await telegram_app.updater.start_polling()
+        # Retry initialization
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                print(f"Attempting to initialize Telegram bot (attempt {attempt + 1}/{max_retries})...")
+                await telegram_app.initialize()
+                await telegram_app.start()
+                await telegram_app.updater.start_polling(drop_pending_updates=True)
+                print(f"✅ Telegram bot ready! Current subscribers: {len(authorized_users)}")
+                break
+            except Exception as e:
+                print(f"❌ Failed to initialize Telegram bot (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5)
+                else:
+                    print("⚠️ Continuing without Telegram bot...")
+                    telegram_app = None
     else:
         print("⚠️ TELEGRAM_BOT_TOKEN not configured")
     
@@ -367,7 +380,16 @@ async def run_telegram_test():
     global telegram_app
     
     print("🤖 Starting Telegram bot for testing...")
-    telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0
+    )
+    
+    telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
     
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("stop", stop))
@@ -375,25 +397,22 @@ async def run_telegram_test():
     
     await telegram_app.initialize()
     await telegram_app.start()
-    await telegram_app.updater.start_polling()
+    await telegram_app.updater.start_polling(drop_pending_updates=True)
     
     print(f"✅ Telegram bot ready! Current subscribers: {len(authorized_users)}")
     
     await asyncio.sleep(2)
     await test_telegram_messages()
     
-    # Stop polling BEFORE shutdown
     await telegram_app.updater.stop()
     await telegram_app.stop()
     await telegram_app.shutdown()
 
 if __name__ == "__main__":
-    # Check if Telegram test mode
     if TEST_TELEGRAM:
         asyncio.run(run_telegram_test())
         sys.exit(0)
     
-    # Check if WhatsApp test mode
     if TEST_WHATSAPP:
         test_whatsapp_messages()
         sys.exit(0)
@@ -409,5 +428,4 @@ if __name__ == "__main__":
         print("5. Test Telegram: python app.py --testt")
         print("="*50 + "\n")
     
-    # Start main bot
     asyncio.run(run_bot())
