@@ -307,6 +307,8 @@ def fetch_candles(granularity):
 def run_crt_bot():
     processed_signals = set()
     
+    print("🚀 CRT Bot started... Waiting for H1/H4 candle closes...")
+    
     while True:
         now = datetime.now(ZoneInfo("Asia/Kolkata"))
         minute = now.minute
