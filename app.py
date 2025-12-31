@@ -233,7 +233,63 @@ async def fetch_candles(granularity):
 async def run_bot():
     global telegram_bot
     
-    # Initialize simple Telegram bot (no polling, just for sending)
+    from telegram.ext import Application, CommandHandler
+    from telegram import Update
+    from telegram.ext import ContextTypes
+    
+    # Command handlers
+    async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        username = update.effective_user.username or "Unknown"
+        
+        if user_id not in authorized_users:
+            authorized_users.add(user_id)
+            save_users(authorized_users)
+            await update.message.reply_text(
+                f"✅ Welcome {username}!\n"
+                f"🎉 You're now subscribed to CRT signals!\n"
+                f"📊 You'll receive H1 and H4 CRT notifications.\n\n"
+                f"Your User ID: `{user_id}`",
+                parse_mode='Markdown'
+            )
+            print(f"✅ New user subscribed: {username} (ID: {user_id})")
+        else:
+            await update.message.reply_text(
+                f"👋 Welcome back {username}!\n"
+                f"✅ You're already subscribed to CRT signals.\n\n"
+                f"Your User ID: `{user_id}`",
+                parse_mode='Markdown'
+            )
+    
+    async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        username = update.effective_user.username or "Unknown"
+        
+        if user_id in authorized_users:
+            authorized_users.remove(user_id)
+            save_users(authorized_users)
+            await update.message.reply_text(
+                f"👋 Goodbye {username}!\n"
+                f"❌ You've been unsubscribed from CRT signals."
+            )
+            print(f"❌ User unsubscribed: {username} (ID: {user_id})")
+        else:
+            await update.message.reply_text("⚠️ You're not subscribed.")
+    
+    async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        is_subscribed = user_id in authorized_users
+        total_users = len(authorized_users)
+        
+        status_msg = (
+            f"📊 **CRT Bot Status**\n\n"
+            f"Your Status: {'✅ Subscribed' if is_subscribed else '❌ Not Subscribed'}\n"
+            f"Total Subscribers: {total_users}\n"
+            f"Your User ID: `{user_id}`"
+        )
+        await update.message.reply_text(status_msg, parse_mode='Markdown')
+    
+    # Initialize Telegram bot with commands
     if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE":
         try:
             print("🤖 Initializing Telegram bot...")
@@ -244,12 +300,24 @@ async def run_bot():
                 write_timeout=30.0,
                 pool_timeout=30.0
             )
-            telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN, request=request)
             
-            # Test sending a startup message
-            test_msg = "🚀 CRT Bot Started!\n📊 Monitoring H1 and H4 candles..."
-            await send_telegram_message(test_msg)
+            telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
+            telegram_app.add_handler(CommandHandler("start", start))
+            telegram_app.add_handler(CommandHandler("stop", stop))
+            telegram_app.add_handler(CommandHandler("status", status))
+            
+            telegram_bot = telegram_app.bot
+            
+            await telegram_app.initialize()
+            await telegram_app.start()
+            await telegram_app.updater.start_polling(drop_pending_updates=True)
+            
             print(f"✅ Telegram bot ready! Subscribers: {len(authorized_users)}")
+            
+            # Send startup message
+            startup_msg = "🚀 CRT Bot Started!\n📊 Monitoring H1 and H4 candles..."
+            await send_telegram_message(startup_msg)
+            
         except Exception as e:
             print(f"⚠️ Telegram initialization failed: {e}")
             print("📱 Bot will continue with WhatsApp only")
