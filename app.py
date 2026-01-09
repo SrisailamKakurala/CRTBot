@@ -126,10 +126,10 @@ async def test_telegram_messages():
     print("="*60 + "\n")
     
     mock_signals = [
-        "[H1] 🟢 Bullish CRT",
-        "[H1] 🔴 Bearish CRT",
-        "[H4] 🟢 Bullish CRT",
-        "[H4] 🔴 Bearish CRT"
+        "[GOLD/H1] 🟢 Bullish CRT",
+        "[GOLD/H1] 🔴 Bearish CRT",
+        "[BTC/H1] 🟢 Bullish CRT",
+        "[BTC/H1] 🔴 Bearish CRT"
     ]
     
     for i, msg in enumerate(mock_signals, 1):
@@ -157,14 +157,14 @@ def test_whatsapp_messages():
     print("="*60 + "\n")
     
     mock_signals = [
-        {"granularity": "H1", "signal": "🟢 Bullish CRT"},
-        {"granularity": "H1", "signal": "🔴 Bearish CRT"}
+        {"instrument": "GOLD", "signal": "🟢 Bullish CRT"},
+        {"instrument": "BTC", "signal": "🔴 Bearish CRT"}
     ]
     
     for i, mock in enumerate(mock_signals, 1):
-        print(f"\n📊 Test {i}/{len(mock_signals)}: {mock['granularity']} - {mock['signal']}")
+        print(f"\n📊 Test {i}/{len(mock_signals)}: {mock['instrument']} - {mock['signal']}")
         
-        msg = f"[{mock['granularity']}] {mock['signal']}"
+        msg = f"[{mock['instrument']}/H1] {mock['signal']}"
         print(f"   📤 Sending: {msg}")
         
         send_whatsapp_message(msg)
@@ -202,30 +202,30 @@ def check_crt(c1, c2):
     return None
 
 # --- Fetch 3 candles and evaluate signal ---
-async def fetch_candles(granularity):
+async def fetch_candles(instrument, instrument_name):
     params = {
-        "granularity": granularity,
+        "granularity": "H1",
         "count": 3,
         "price": "M"
     }
-    request = InstrumentsCandles(instrument="XAU_USD", params=params)
+    request = InstrumentsCandles(instrument=instrument, params=params)
     client.request(request)
     candles = request.response['candles']
 
     if len(candles) < 3:
-        print("⚠️ Not enough candle data.")
+        print(f"⚠️ Not enough candle data for {instrument_name}.")
         return
     
     c1 = candles[0]['mid']
     c2 = candles[1]['mid']
     
     if TEST_MODE:
-        print(f"🧪 [TEST] C1 (setup): {c1}, C2 (sweep): {c2}")
+        print(f"🧪 [TEST] {instrument_name} - C1 (setup): {c1}, C2 (sweep): {c2}")
     
     result = check_crt(c1, c2)
     
     if result:
-        msg = f"[{granularity}] {result}"
+        msg = f"[{instrument_name}/H1] {result}"
         print(msg)
         await send_notification(msg)
 
@@ -247,7 +247,7 @@ async def run_bot():
             telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN, request=request)
             
             # Test sending a startup message
-            test_msg = "🚀 CRT Bot Started!\n📊 Monitoring H1 and H4 candles..."
+            test_msg = "🚀 CRT Bot Started!\n📊 Monitoring GOLD & BTC H1 candles..."
             await send_telegram_message(test_msg)
             print(f"✅ Telegram bot ready! Subscribers: {len(authorized_users)}")
         except Exception as e:
@@ -257,7 +257,7 @@ async def run_bot():
     else:
         print("⚠️ TELEGRAM_BOT_TOKEN not configured")
     
-    print("🚀 CRT Bot started... Waiting for H1/H4 candle closes...")
+    print("🚀 CRT Bot started... Waiting for H1 candle closes...")
     
     # Main CRT detection loop
     processed_signals = set()
@@ -291,12 +291,12 @@ async def run_bot():
         
         if in_time_window and minute == 30 and 0 <= second <= 5:
             if time_key not in processed_signals:
-                if now.hour % 1 == 0:
-                    print("🚀 Fetching H1 candles...")
-                    await fetch_candles("H1")
-                if now.hour % 4 == 0:
-                    print("🚀 Fetching H4 candles...")
-                    await fetch_candles("H4")
+                # Check H1 for both GOLD and BTC
+                print("🚀 Fetching H1 candles for GOLD...")
+                await fetch_candles("XAU_USD", "GOLD")
+                
+                print("🚀 Fetching H1 candles for BTC...")
+                await fetch_candles("BTC_USD", "BTC")
                 
                 processed_signals.add(time_key)
                 
@@ -325,7 +325,7 @@ async def run_telegram_test():
             await update.message.reply_text(
                 f"✅ Welcome {username}!\n"
                 f"🎉 You're now subscribed to CRT signals!\n"
-                f"📊 You'll receive H1 and H4 CRT notifications.\n\n"
+                f"📊 You'll receive GOLD & BTC H1 CRT notifications.\n\n"
                 f"Your User ID: `{user_id}`",
                 parse_mode='Markdown'
             )
@@ -385,10 +385,5 @@ if __name__ == "__main__":
         print("4. Test WhatsApp: python app.py --testw")
         print("5. Test Telegram: python app.py --testt")
         print("="*50 + "\n")
-        
-    async def startup_message():
-        test_msg = "🚀 CRT Bot Started!\n📊 Monitoring H1 and H4 candles..."
-        await send_telegram_message(test_msg)
-    
     
     asyncio.run(run_bot())
