@@ -1,7 +1,6 @@
 import oandapyV20
 from oandapyV20.endpoints.instruments import InstrumentsCandles
 from datetime import datetime, timedelta, timezone
-from twilio.rest import Client
 import time
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -15,16 +14,11 @@ import asyncio
 load_dotenv()
 
 ACCESS_TOKEN = os.getenv('OANDA_ACCESS_TOKEN')
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-TWILIO_WHATSAPP_NUMBER = os.getenv('TWILIO_WHATSAPP_NUMBER')
-TO_WHATSAPP_NUMBER = os.getenv('TO_WHATSAPP_NUMBER')
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 # Testing mode configuration
 TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true' or '--test' in sys.argv
 FORCE_CRT_SIGNAL = os.getenv('FORCE_CRT_SIGNAL', 'none').lower()
-TEST_WHATSAPP = '--testw' in sys.argv
 TEST_TELEGRAM = '--testt' in sys.argv
 
 if TEST_MODE:
@@ -32,14 +26,10 @@ if TEST_MODE:
     if FORCE_CRT_SIGNAL != 'none':
         print(f"🧪 Forcing {FORCE_CRT_SIGNAL.upper()} CRT signals")
 
-if TEST_WHATSAPP:
-    print("📱 WHATSAPP TEST MODE ENABLED 📱")
-
 if TEST_TELEGRAM:
     print("📱 TELEGRAM TEST MODE ENABLED 📱")
 
 client = oandapyV20.API(access_token=ACCESS_TOKEN, environment="practice")
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # Simple Telegram bot - just for sending messages
 telegram_bot = None
@@ -92,33 +82,6 @@ async def send_telegram_message(message):
     else:
         print(f"📤 Telegram sent to {success_count} users (Failed: {fail_count})")
 
-# --- Send WhatsApp message ---
-def send_whatsapp_message(body):
-    try:
-        twilio_client.messages.create(
-            body=body,
-            from_=TWILIO_WHATSAPP_NUMBER,
-            to=TO_WHATSAPP_NUMBER
-        )
-        if TEST_MODE or TEST_WHATSAPP:
-            print(f"🧪 [TEST] WhatsApp sent: {body}")
-        else:
-            print(f"📤 WhatsApp sent: {body}")
-    except Exception as e:
-        print(f"❌ Failed to send WhatsApp message: {e}")
-
-# --- Unified message sender (Telegram first, then WhatsApp) ---
-async def send_notification(message):
-    try:
-        await send_telegram_message(message)
-    except Exception as e:
-        print(f"⚠️ Telegram failed: {e}")
-    
-    try:
-        send_whatsapp_message(message)
-    except Exception as e:
-        print(f"⚠️ WhatsApp failed (continuing): {e}")
-
 # --- Test Telegram with mock data ---
 async def test_telegram_messages():
     print("\n" + "="*60)
@@ -127,9 +90,7 @@ async def test_telegram_messages():
     
     mock_signals = [
         "[GOLD/H1] 🟢 Bullish CRT",
-        "[GOLD/H1] 🔴 Bearish CRT",
-        "[BTC/H1] 🟢 Bullish CRT",
-        "[BTC/H1] 🔴 Bearish CRT"
+        "[GOLD/H1] 🔴 Bearish CRT"
     ]
     
     for i, msg in enumerate(mock_signals, 1):
@@ -148,36 +109,6 @@ async def test_telegram_messages():
     print("✅ TELEGRAM TEST COMPLETED!")
     print(f"📊 Total messages sent: {len(mock_signals)}")
     print(f"👥 Subscribers: {len(authorized_users)}")
-    print("="*60 + "\n")
-
-# --- Test WhatsApp with mock data ---
-def test_whatsapp_messages():
-    print("\n" + "="*60)
-    print("🧪 TESTING WHATSAPP MESSAGING WITH MOCK DATA")
-    print("="*60 + "\n")
-    
-    mock_signals = [
-        {"instrument": "GOLD", "signal": "🟢 Bullish CRT"},
-        {"instrument": "BTC", "signal": "🔴 Bearish CRT"}
-    ]
-    
-    for i, mock in enumerate(mock_signals, 1):
-        print(f"\n📊 Test {i}/{len(mock_signals)}: {mock['instrument']} - {mock['signal']}")
-        
-        msg = f"[{mock['instrument']}/H1] {mock['signal']}"
-        print(f"   📤 Sending: {msg}")
-        
-        send_whatsapp_message(msg)
-        
-        print(f"   ✅ Message sent successfully!")
-        
-        if i < len(mock_signals):
-            print(f"   ⏳ Waiting 2 seconds before next test...")
-            time.sleep(2)
-    
-    print("\n" + "="*60)
-    print("✅ WHATSAPP TEST COMPLETED!")
-    print(f"📊 Total messages sent: {len(mock_signals)}")
     print("="*60 + "\n")
 
 # --- CRT Signal Logic ---
@@ -202,32 +133,38 @@ def check_crt(c1, c2):
     return None
 
 # --- Fetch 3 candles and evaluate signal ---
-async def fetch_candles(instrument, instrument_name):
+async def fetch_candles():
     params = {
         "granularity": "H1",
         "count": 3,
         "price": "M"
     }
-    request = InstrumentsCandles(instrument=instrument, params=params)
-    client.request(request)
-    candles = request.response['candles']
+    
+    try:
+        request = InstrumentsCandles(instrument="XAU_USD", params=params)
+        client.request(request)
+        candles = request.response['candles']
 
-    if len(candles) < 3:
-        print(f"⚠️ Not enough candle data for {instrument_name}.")
-        return
-    
-    c1 = candles[0]['mid']
-    c2 = candles[1]['mid']
-    
-    if TEST_MODE:
-        print(f"🧪 [TEST] {instrument_name} - C1 (setup): {c1}, C2 (sweep): {c2}")
-    
-    result = check_crt(c1, c2)
-    
-    if result:
-        msg = f"[{instrument_name}/H1] {result}"
-        print(msg)
-        await send_notification(msg)
+        if len(candles) < 3:
+            print(f"⚠️ Not enough candle data for GOLD.")
+            return
+        
+        c1 = candles[0]['mid']
+        c2 = candles[1]['mid']
+        
+        if TEST_MODE:
+            print(f"🧪 [TEST] GOLD - C1 (setup): {c1}, C2 (sweep): {c2}")
+        
+        result = check_crt(c1, c2)
+        
+        if result:
+            msg = f"[GOLD/H1] {result}"
+            print(msg)
+            await send_telegram_message(msg)
+        else:
+            print("ℹ️ No CRT signal detected for GOLD")
+    except Exception as e:
+        print(f"❌ Error fetching GOLD candles: {e}")
 
 # --- Main loop ---
 async def run_bot():
@@ -247,12 +184,12 @@ async def run_bot():
             telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN, request=request)
             
             # Test sending a startup message
-            test_msg = "🚀 CRT Bot Started!\n📊 Monitoring GOLD & BTC H1 candles..."
+            test_msg = "🚀 CRT Bot Started!\n📊 Monitoring GOLD H1 candles..."
             await send_telegram_message(test_msg)
             print(f"✅ Telegram bot ready! Subscribers: {len(authorized_users)}")
         except Exception as e:
             print(f"⚠️ Telegram initialization failed: {e}")
-            print("📱 Bot will continue with WhatsApp only")
+            print("📱 Continuing without Telegram...")
             telegram_bot = None
     else:
         print("⚠️ TELEGRAM_BOT_TOKEN not configured")
@@ -287,20 +224,17 @@ async def run_bot():
                 elif hour >= 3:
                     in_time_window = True
         
-        time_key = f"{now.year}-{now.month}-{now.day}-{hour}-{minute//30}"
+        time_key = f"{now.year}-{now.month}-{now.day}-{hour}"
         
         if in_time_window and minute == 30 and 0 <= second <= 5:
             if time_key not in processed_signals:
-                # Check H1 for both GOLD and BTC
                 print("🚀 Fetching H1 candles for GOLD...")
-                await fetch_candles("XAU_USD", "GOLD")
-                
-                print("🚀 Fetching H1 candles for BTC...")
-                await fetch_candles("BTC_USD", "BTC")
+                await fetch_candles()
                 
                 processed_signals.add(time_key)
                 
-                if len(processed_signals) > 10:
+                # Keep only last 24 hours of processed signals
+                if len(processed_signals) > 24:
                     processed_signals.pop()
         elif not in_time_window:
             print("⏸️ Outside trading hours - waiting...")
@@ -325,7 +259,7 @@ async def run_telegram_test():
             await update.message.reply_text(
                 f"✅ Welcome {username}!\n"
                 f"🎉 You're now subscribed to CRT signals!\n"
-                f"📊 You'll receive GOLD & BTC H1 CRT notifications.\n\n"
+                f"📊 You'll receive GOLD H1 CRT notifications.\n\n"
                 f"Your User ID: `{user_id}`",
                 parse_mode='Markdown'
             )
@@ -371,19 +305,14 @@ if __name__ == "__main__":
         asyncio.run(run_telegram_test())
         sys.exit(0)
     
-    if TEST_WHATSAPP:
-        test_whatsapp_messages()
-        sys.exit(0)
-    
     if TEST_MODE:
         print("\n" + "="*50)
         print("TEST MODE INSTRUCTIONS:")
         print("="*50)
-        print("1. Normal test: python app.py --test")
+        print("1. Normal test: python test.py --test")
         print("2. Force bullish: Set FORCE_CRT_SIGNAL=bullish in .env")
         print("3. Force bearish: Set FORCE_CRT_SIGNAL=bearish in .env")
-        print("4. Test WhatsApp: python app.py --testw")
-        print("5. Test Telegram: python app.py --testt")
+        print("4. Test Telegram: python test.py --testt")
         print("="*50 + "\n")
     
     asyncio.run(run_bot())
