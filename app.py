@@ -226,7 +226,7 @@ async def run_bot():
         
         time_key = f"{now.year}-{now.month}-{now.day}-{hour}"
         
-        if in_time_window and minute == 30 and 0 <= second <= 5:
+        if in_time_window and minute == 30 and 0 <= second <= 10:
             if time_key not in processed_signals:
                 print("🚀 Fetching H1 candles for GOLD...")
                 await fetch_candles()
