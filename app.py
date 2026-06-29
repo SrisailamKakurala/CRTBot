@@ -128,7 +128,7 @@ def check_crt(c1, c2):
 
     if l1 > l2 and close2 > l1 and h1 > h2:
         return "🟢 Bullish CRT"
-    elif h1 < h2 and close2 < h1 and l1 < l2:
+    elif h1 < h2 and close2 < h1 and l1 < l2: 
         return "🔴 Bearish CRT"
     return None
 
